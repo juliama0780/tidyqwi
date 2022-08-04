@@ -1,3 +1,6 @@
+# Modified all_groups and geography parameters
+
+
 #' Retrieve the Quarterly Workforce Indcator Data
 #'
 #' The purpose of this function is to retrive firm information from the
@@ -12,9 +15,9 @@
 #'@param industry_level Industries to fetch. Default is all level 2
 #'@param states state fips code to fetch
 #'@param endpoint US Census endpoint designation. One of "sa" for Sex * Age, "se" for Sex by Education and "rh" for Race/Ethnicity
-#'@param all_groups default to true
+#'@param all_groups defaulted to true, modified to 3 possible arguments
 #'@param owner_code firm owner code
-#'@param geography the US Census geography granuality (one of cbsa or county)
+#'@param geography the US Census geography granuality (one of cbsa or county), added "statewide" argument
 #'@param seasonadj seasonal adjustment factor (one of "U" or "S")
 #'@param apikey your US Census API Key
 #'@param processing the processing strategy (default = "sequential")
@@ -56,30 +59,30 @@ get_qwi <- function(years,
                     industry_level = 2,
                     states,
                     endpoint = "sa",
-                    all_groups = TRUE,
+                    all_groups = 1,
                     owner_code = TRUE,
-                    geography = "cbsa",
+                    geography = "statewide",
                     seasonadj = "U",
                     apikey = NULL,
                     processing = "sequential") {
-
+  
   # Ensure quarters are properly supplied
   if(!all(quarters %in% c(1,2,3,4))){
     stop(sprintf("You have specified %s.\nPlease specify 1, 2, 3, or 4 \ne.g. quarters = c(1,2)", quarters))
   }
-
+  
   # Ensure all industry specications are properly specified
   if(!all(industry_level %in% industry_labels$ind_level)){
     stop(sprintf("Please specify a valid industry label.\nCheck the `industry_labels` table for details."))
   }
-
+  
   states <- converted_fips(states)
-
+  
   # Verify all states are properly specified
   if(!all(states %in% state_info$state_fips)){
     stop(sprintf("%s contains an invalid fips code.\nPlease check the state_info table for details\non valid fips codes.",states))
   }
-
+  
   # Check that API Key Exists
   if(is.null(apikey)){
     stop("Please specifiy a valid API Key.")
@@ -88,7 +91,7 @@ get_qwi <- function(years,
   if(min(years) < 1990){
     stop(sprintf("%s is before 1990.\nThe QWI data are only available after 1990.",min(years)))
   }
-
+  
   all_variables <- c(
     "EarnBeg",
     "EarnHirAS",
@@ -155,46 +158,52 @@ get_qwi <- function(years,
     "sTurnOvrS",
     "TurnOvrS"
   )
-
+  
   if(is.null(variables)){
     variables <- all_variables
   }
-
+  
   if(!all(variables %in% all_variables)){
     stop(sprintf("You have not specified a valid variable name"))
   }
-
+  
   if(industry_level %in% c("A", 2, 3, 4)){
     industries <- industry_labels$industry[industry_labels$ind_level==industry_level]
   } else{
     stop("You have not specified a valid NAICS Number Digit in `industry_level` (e.g. A, 2, 3, 4)")
   }
   year_collapsed <- years
-
+  
   quarter_collapsed <- paste(quarters, collapse = ",")
-
-
+  
+  
   if(!endpoint %in% c("sa", "se", "rh")){
     stop(sprintf("You have not specified a valid endpoint one of `sa``, `se``, or `rh`", endpoint))
   }
-
+  
   endpoint_to_retrieve <- switch( endpoint,
                                   sa = "sa",
                                   se = "se",
                                   rh = "rh")
-
-  if( all_groups == TRUE){
+  
+  if(all_groups == 1){
     cross_tab <- switch( endpoint,
                          sa = "&agegrp=A00&sex=0",
                          se = "&sex=0&education=E0",
                          rh = "&race=A0&ethnicity=A0")
-  } else {
+  } else if(all_groups == 2){
     cross_tab <- switch( endpoint,
                          sa = "&sex=1&sex=2&agegrp=A01&agegrp=A02&agegrp=A03&agegrp=A04&agegrp=A05&agegrp=A06&agegrp=A07&agegrp=A08",
                          se = "&sex=1&sex=2&education=E1&education=E2&education=E3&education=E4&education=E5",
                          rh = "&race=A1&race=A2&race=A3&race=A4&race=A5&race=A6&race=A7&ethnicity=A1&ethnicity=A2")
+  } else if(all_groups == 3){
+    cross_tab <- switch( endpoint,
+                         sa = "&sex=0&sex=1&sex=2&agegrp=A00&agegrp=A01&agegrp=A02&agegrp=A03&agegrp=A04&agegrp=A05&agegrp=A06&agegrp=A07&agegrp=A08",
+                         se = "&sex=0&sex=1&sex=2&education=E0&education=E1&education=E2&education=E3&education=E4&education=E5",
+                         rh = "&race=A0&race=A1&race=A2&race=A3&race=A4&race=A5&race=A6&race=A7&ethnicity=A0&ethnicity=A1&ethnicity=A2")
   }
-
+  
+  
   if( owner_code == TRUE){
     owner_code <- "&ownercode=A00"
   } else {
@@ -202,23 +211,25 @@ get_qwi <- function(years,
                           A01 = "&ownercode=A01",
                           A02 = "&ownercode=A02")
   }
-
-  if(!geography %in% c("cbsa", "county")){
-    stop("Please enter a county or cbsa in the `geography` field")
+  
+  if(!geography %in% c("statewide", "cbsa", "county")){
+    stop("Please enter a county or cbsa, or statewide, in the `geography` field")
   }
-
+  
   if(geography == "cbsa"){
-    geography <- "metropolitan+statistical+area/micropolitan+statistical+area"
-  } else{
-    geography <- geography
+    geography <- "&for=metropolitan+statistical+area/micropolitan+statistical+area:*&in="
+  } else if (geography == "county"){
+    geography <- paste0("county:*&in=", geography)
+  } else if (geography == "statewide"){
+    geography <- "&for="
   }
-
+  
   if(!seasonadj %in%c("S", "U")){
     stop("Please specify a valid seasonal adjustment parameter of `S` or `U`")
   }
-
+  
   # Initialise some empty "collectors" which is where we will store our intermediate data.
-
+  
   urls <- tidyr::crossing(variables,
                           endpoint_to_retrieve,
                           cross_tab,
@@ -231,7 +242,7 @@ get_qwi <- function(years,
     dplyr::mutate(url = paste(
       "https://api.census.gov/data/timeseries/qwi/",endpoint_to_retrieve,"?get=",
       variables,
-      "&for=",geography,":*&in=state:",
+      geography,"state:",
       states,
       "&year=",year_collapsed,
       "&quarter=",quarter_collapsed,
@@ -244,49 +255,49 @@ get_qwi <- function(years,
       apikey,
       sep = ""
     ))
-
+  
   #print(nrow(urls))
-
+  
   # Do a single check to confirm that there is a valid API Key
-
+  
   call <- httr::GET(urls$url[[1]])
-
-
+  
+  
   if(!substr(call$status_code,1,1) == "2"|
      show_condition(check_census_api_call(call))!="error"){
     # IF 200 was not returned then there was an error.
-
+    
     if(grepl(pattern = "valid key must", check_census_api_call(call))){
       stop(check_census_api_call(call))
     }
   }
-
+  
   # Now do the vectorised version
-
+  
   #results <- purrr::map(urls$url, httr::GET)
   results <- vector("list", length = nrow(urls))
   for(i in 1:nrow(urls)){
     results[[i]] <- httr::GET(urls$url[[i]])
     #print(paste0(i, "out of", nrow(urls)))
   }
-
+  
   safe_parse_qwi_message <- purrr::safely(parse_qwi_message)
-
-
+  
+  
   strategy <- paste0("future::", processing)
-
+  
   plan(strategy)
-
+  
   output <- furrr::future_map(results, safe_parse_qwi_message)
-
+  
   a<- purrr::transpose(output)[["result"]]
-
+  
   non_error_returns <- tidyr::spread_(
     dplyr::bind_rows(
       purrr::compact(a)),
     "parameter", "value", fill = NA)
-
-
+  
+  
   # Add a datetime column for the quarter. This will help with time series
   # manipulation down the line
   out_data <- dplyr::mutate(
@@ -300,7 +311,7 @@ get_qwi <- function(years,
   )
   oplan <- plan()
   on.exit(plan(oplan), add = TRUE)
-
+  
   class(out_data) <- append(class(out_data),"qwi")
-    return(out_data)
+  return(out_data)
 }
